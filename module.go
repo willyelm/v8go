@@ -175,3 +175,12 @@ func (m Module) IsSourceTextModule() bool {
 func (m Module) GetModuleNamespace() *Value {
 	return &Value{ptr: C.ModuleGetModuleNamespace(m.iso, m.ptr)}
 }
+
+// GetModuleNamespaceValue returns the module namespace bound to the given
+// context so callers can inspect namespace exports from Go safely.
+func (m Module) GetModuleNamespaceValue(ctx *Context) *Value {
+	if ctx == nil {
+		return m.GetModuleNamespace()
+	}
+	return &Value{ptr: C.ModuleGetModuleNamespace(m.iso, m.ptr), ctx: ctx}
+}

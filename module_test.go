@@ -157,7 +157,40 @@ func TestDynamicImport(t *testing.T) {
 
 func TestModuleNamespace(t *testing.T) {
 	t.Parallel()
-	t.Skip("TODO: Module.GetModuleNamespace currently crashes in the fork bridge")
+
+	iso := v8.NewIsolate()
+	defer iso.Dispose()
+
+	ctx := v8.NewContext(iso)
+	defer ctx.Close()
+
+	mod, err := v8.CompileModule(iso, `export const answer = 42;`, "namespace.js")
+	fatalIf(t, err)
+
+	err = mod.InstantiateModule(ctx, nil)
+	fatalIf(t, err)
+
+	value, err := mod.Evaluate(ctx)
+	fatalIf(t, err)
+	if value != nil && value.IsPromise() {
+		promise, err := value.AsPromise()
+		fatalIf(t, err)
+		ctx.PerformMicrotaskCheckpoint()
+		if got := promise.State(); got != v8.Fulfilled {
+			t.Fatalf("unexpected promise state: got %v want %v", got, v8.Fulfilled)
+		}
+	}
+
+	namespace := mod.GetModuleNamespaceValue(ctx)
+	if namespace == nil || !namespace.IsObject() {
+		t.Fatal("expected module namespace object")
+	}
+
+	answer, err := namespace.Object().Get("answer")
+	fatalIf(t, err)
+	if answer == nil || answer.Integer() != 42 {
+		t.Fatalf("unexpected namespace export: %v", answer)
+	}
 }
 
 type testModuleResolver struct {
@@ -216,7 +249,7 @@ func (r *testModuleResolver) ResolveDynamicImport(ctx *v8.Context, spec string, 
 		if err != nil {
 			return nil, err
 		}
-		namespace := mod.GetModuleNamespace()
+		namespace := mod.GetModuleNamespaceValue(ctx)
 		evalPromise.Then(func(info *v8.FunctionCallbackInfo) *v8.Value {
 			resolver.Resolve(namespace)
 			return namespace
@@ -229,7 +262,7 @@ func (r *testModuleResolver) ResolveDynamicImport(ctx *v8.Context, spec string, 
 		return promise, nil
 	}
 
-	resolver.Resolve(mod.GetModuleNamespace())
+	resolver.Resolve(mod.GetModuleNamespaceValue(ctx))
 	return promise, nil
 }
 
