@@ -11,10 +11,22 @@
 
 <img src="gopher.jpg" width="200px" alt="V8 Gopher based on original artwork from the amazing Renee French" />
 
+This fork builds on `rogchap/v8go` with a stronger focus on embeddable runtime support. The main goal is to make module loading easier to integrate, easier to extend, and more efficient for custom isolate-based runtimes instead of keeping ESM support in application glue code.
+
+Compared to `rogchap/v8go`, this fork adds and is evolving around:
+
+- first-class ESM compilation and evaluation with `CompileModule`, `InstantiateModule`, and `Evaluate`
+- static import resolution through Go-managed module loader callbacks
+- dynamic `import()` support through Go-managed host import callbacks
+- module status and namespace access for runtime-controlled loading
+- a cleaner path for custom module origins, resolver policies, and runtime-specific caching
+
+The intent is to keep the API abstract enough to feel like V8, while providing the runtime hooks needed to build higher-level systems on top of it with less glue and less repeated loader code.
+
 ## Usage
 
 ```go
-import v8 "rogchap.com/v8go"
+import v8 "github.com/willyelm/v8go"
 ```
 
 ### Running a script

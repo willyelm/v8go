@@ -11,7 +11,7 @@ import (
 	"os"
 	"testing"
 
-	"rogchap.com/v8go"
+	"github.com/willyelm/v8go"
 )
 
 func TestMain(m *testing.M) {

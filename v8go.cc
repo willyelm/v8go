@@ -49,6 +49,27 @@ struct m_unboundScript {
   Persistent<UnboundScript> ptr;
 };
 
+struct m_module {
+  Isolate* iso;
+  Persistent<Module> ptr;
+};
+
+class v8goData {
+  Global<Data> ptr;
+
+ public:
+  v8goData(Isolate* iso, Local<Data> val) : ptr(iso, val) {}
+  Local<Data> ToLocal(Isolate* iso) { return ptr.Get(iso); }
+};
+
+class v8goFixedArray {
+  Global<FixedArray> ptr;
+
+ public:
+  v8goFixedArray(Isolate* iso, Local<FixedArray> val) : ptr(iso, val) {}
+  Local<FixedArray> ToLocal(Isolate* iso) { return ptr.Get(iso); }
+};
+
 const char* CopyString(std::string str) {
   int len = str.length();
   char* mem = (char*)malloc(len + 1);
@@ -63,6 +84,18 @@ const char* CopyString(String::Utf8Value& value) {
   }
   return CopyString(std::string(*value, value.length()));
 }
+
+MaybeLocal<Module> ResolveModuleCallback(Local<Context> context,
+                                         Local<String> specifier,
+                                         Local<FixedArray> import_assertions,
+                                         Local<Module> referrer);
+
+MaybeLocal<Promise> DynamicImportModuleCallback(
+    Local<Context> context,
+    Local<Data> host_defined_options,
+    Local<Value> resource_name,
+    Local<String> specifier,
+    Local<FixedArray> import_assertions);
 
 static RtnError ExceptionError(TryCatch& try_catch,
                                Isolate* iso,
@@ -157,6 +190,7 @@ IsolatePtr NewIsolate() {
   HandleScope handle_scope(iso);
 
   iso->SetCaptureStackTraceForUncaughtExceptions(true);
+  iso->SetHostImportModuleDynamicallyCallback(DynamicImportModuleCallback);
 
   // Create a Context for internal use
   m_ctx* ctx = new m_ctx;
@@ -239,7 +273,8 @@ RtnUnboundScript IsolateCompileUnboundScript(IsolatePtr iso,
                                                  opts.cachedData.length);
   }
 
-  ScriptOrigin script_origin(iso, ogn);
+  ScriptOrigin script_origin(iso, ogn, 0, 0, false, -1, Local<Value>(),
+                             false, false, true);
 
   ScriptCompiler::Source source(src, script_origin, cached_data);
 
@@ -257,6 +292,36 @@ RtnUnboundScript IsolateCompileUnboundScript(IsolatePtr iso,
   m_unboundScript* us = new m_unboundScript;
   us->ptr.Reset(iso, unbound_script);
   rtn.ptr = tracked_unbound_script(ctx, us);
+  return rtn;
+}
+
+RtnModule CompileModule(IsolatePtr iso, const char* s, const char* o) {
+  ISOLATE_SCOPE_INTERNAL_CONTEXT(iso);
+  TryCatch try_catch(iso);
+  Local<Context> local_ctx = ctx->ptr.Get(iso);
+  Context::Scope context_scope(local_ctx);
+
+  RtnModule rtn = {};
+
+  Local<String> src =
+      String::NewFromUtf8(iso, s, NewStringType::kNormal).ToLocalChecked();
+  Local<String> ogn =
+      String::NewFromUtf8(iso, o, NewStringType::kNormal).ToLocalChecked();
+
+  ScriptOrigin script_origin(iso, ogn, 0, 0, false, -1, Local<Value>(),
+                             false, false, true);
+  ScriptCompiler::Source source(src, script_origin);
+
+  Local<Module> module;
+  if (!ScriptCompiler::CompileModule(iso, &source).ToLocal(&module)) {
+    rtn.error = ExceptionError(try_catch, iso, local_ctx);
+    return rtn;
+  }
+
+  m_module* mod = new m_module;
+  mod->iso = iso;
+  mod->ptr.Reset(iso, module);
+  rtn.ptr = mod;
   return rtn;
 }
 
@@ -499,9 +564,9 @@ static void FunctionTemplateCallback(const FunctionCallbackInfo<Value>& info) {
                             iso, info.This()));
 
   int args_count = info.Length();
-  ValuePtr thisAndArgs[args_count + 1];
+  std::vector<ValuePtr> thisAndArgs(args_count + 1);
   thisAndArgs[0] = tracked_value(ctx, _this);
-  ValuePtr* args = thisAndArgs + 1;
+  ValuePtr* args = thisAndArgs.data() + 1;
   for (int i = 0; i < args_count; i++) {
     m_value* val = new m_value;
     val->id = 0;
@@ -513,7 +578,7 @@ static void FunctionTemplateCallback(const FunctionCallbackInfo<Value>& info) {
   }
 
   ValuePtr val =
-      goFunctionCallback(ctx_ref, callback_ref, thisAndArgs, args_count);
+      goFunctionCallback(ctx_ref, callback_ref, thisAndArgs.data(), args_count);
   if (val != nullptr) {
     info.GetReturnValue().Set(val->ptr.Get(iso));
   } else {
@@ -598,6 +663,7 @@ ContextPtr NewContext(IsolatePtr iso,
   m_ctx* ctx = new m_ctx;
   ctx->ptr.Reset(iso, local_ctx);
   ctx->iso = iso;
+  local_ctx->SetEmbedderData(2, External::New(iso, ctx));
   return ctx;
 }
 
@@ -660,6 +726,160 @@ RtnValue RunScript(ContextPtr ctx, const char* source, const char* origin) {
 
   rtn.value = tracked_value(ctx, val);
   return rtn;
+}
+
+int FixedArrayLength(v8goFixedArray* fixedArray, ContextPtr ctx) {
+  LOCAL_CONTEXT(ctx)
+  Local<FixedArray> arr = fixedArray->ToLocal(iso);
+  return arr->Length();
+}
+
+v8goData* FixedArrayGet(v8goFixedArray* fixedArray, ContextPtr ctx, int i) {
+  LOCAL_CONTEXT(ctx)
+  Local<FixedArray> arr = fixedArray->ToLocal(iso);
+  return new v8goData(iso, arr->Get(local_ctx, i));
+}
+
+m_value* DataAsValue(v8goData* data, ContextPtr ctx) {
+  LOCAL_CONTEXT(ctx);
+  auto value = Local<Value>::Cast(data->ToLocal(iso));
+  m_value* retVal = new m_value;
+  retVal->id = 0;
+  retVal->iso = iso;
+  retVal->ctx = ctx;
+  retVal->ptr = Persistent<Value, CopyablePersistentTraits<Value>>(iso, value);
+  return tracked_value(ctx, retVal);
+}
+
+void DataRelease(v8goData* data) {
+  delete data;
+}
+
+}  // extern "C"
+
+MaybeLocal<Module> ResolveModuleCallback(Local<Context> context,
+                                         Local<String> specifier,
+                                         Local<FixedArray> import_assertions,
+                                         Local<Module> referrer) {
+  Isolate* iso = context->GetIsolate();
+  int ctx_ref = context->GetEmbedderData(1).As<Integer>()->Value();
+
+  std::size_t spec_cap = specifier->Utf8Length(iso);
+  char* spec_buf = static_cast<char*>(malloc(spec_cap));
+  specifier->WriteUtf8(iso, spec_buf, spec_cap);
+
+  m_module ref;
+  ref.iso = iso;
+  ref.ptr.Reset(iso, referrer);
+  v8goFixedArray assertions(iso, import_assertions);
+  resolveModuleCallback_return retval =
+      resolveModuleCallback(ctx_ref, spec_buf, spec_cap, &assertions, &ref);
+  if (retval.r1 != nullptr) {
+    iso->ThrowException(retval.r1->ptr.Get(iso));
+    return MaybeLocal<Module>();
+  }
+  return retval.r0->ptr.Get(iso);
+}
+
+MaybeLocal<Promise> DynamicImportModuleCallback(
+    Local<Context> context,
+    Local<Data> host_defined_options,
+    Local<Value> resource_name,
+    Local<String> specifier,
+    Local<FixedArray> import_assertions) {
+  (void)host_defined_options;
+  (void)import_assertions;
+
+  Isolate* iso = context->GetIsolate();
+  int ctx_ref = context->GetEmbedderData(1).As<Integer>()->Value();
+
+  Local<String> resource_string;
+  if (!resource_name->ToString(context).ToLocal(&resource_string)) {
+    return MaybeLocal<Promise>();
+  }
+
+  std::size_t resource_cap = resource_string->Utf8Length(iso);
+  char* resource_buf = static_cast<char*>(malloc(resource_cap));
+  resource_string->WriteUtf8(iso, resource_buf, resource_cap);
+
+  std::size_t spec_cap = specifier->Utf8Length(iso);
+  char* spec_buf = static_cast<char*>(malloc(spec_cap));
+  specifier->WriteUtf8(iso, spec_buf, spec_cap);
+
+  ValuePtr promise =
+      dynamicImportModuleCallback(ctx_ref, resource_buf, resource_cap, spec_buf, spec_cap);
+  if (promise == nullptr) {
+    return MaybeLocal<Promise>();
+  }
+  return promise->ptr.Get(iso).As<Promise>();
+}
+
+extern "C" {
+
+int ModuleGetStatus(ModulePtr module) {
+  Isolate* iso = module->iso;
+  ISOLATE_SCOPE(iso);
+
+  Local<Module> local_mod = module->ptr.Get(iso);
+  return local_mod->GetStatus();
+}
+
+int ModuleScriptId(ModulePtr module) {
+  ISOLATE_SCOPE(module->iso);
+  Local<Module> local_mod = module->ptr.Get(module->iso);
+  return local_mod->ScriptId();
+}
+
+int ModuleIsSourceTextModule(ModulePtr module) {
+  ISOLATE_SCOPE(module->iso);
+  Local<Module> local_mod = module->ptr.Get(module->iso);
+  return local_mod->IsSourceTextModule() ? 1 : 0;
+}
+
+RtnValue ModuleEvaluate(ContextPtr ctx, ModulePtr module) {
+  LOCAL_CONTEXT(ctx);
+  Local<Module> local_mod = module->ptr.Get(iso);
+
+  RtnValue rtn = {};
+  Local<Value> result;
+  if (!local_mod->Evaluate(local_ctx).ToLocal(&result)) {
+    rtn.error = ExceptionError(try_catch, iso, local_ctx);
+    return rtn;
+  }
+
+  m_value* new_val = new m_value;
+  new_val->id = 0;
+  new_val->iso = iso;
+  new_val->ctx = ctx;
+  new_val->ptr = Persistent<Value, CopyablePersistentTraits<Value>>(iso, result);
+  rtn.value = tracked_value(ctx, new_val);
+  return rtn;
+}
+
+RtnError ModuleInstantiateModule(ContextPtr ctx, ModulePtr module) {
+  LOCAL_CONTEXT(ctx);
+  Local<Module> local_mod = module->ptr.Get(iso);
+
+  RtnError rtn = {nullptr, nullptr, nullptr};
+  Maybe<bool> instantiate_res =
+      local_mod->InstantiateModule(local_ctx, ResolveModuleCallback);
+  if (instantiate_res.IsNothing()) {
+    rtn = ExceptionError(try_catch, iso, local_ctx);
+  }
+  return rtn;
+}
+
+ValuePtr ModuleGetModuleNamespace(IsolatePtr iso, ModulePtr module) {
+  ISOLATE_SCOPE_INTERNAL_CONTEXT(iso);
+  Local<Module> mod = module->ptr.Get(iso);
+  Local<Value> result = mod->GetModuleNamespace();
+
+  m_value* new_val = new m_value;
+  new_val->id = 0;
+  new_val->iso = iso;
+  new_val->ctx = ctx;
+  new_val->ptr = Persistent<Value, CopyablePersistentTraits<Value>>(iso, result);
+  return tracked_value(ctx, new_val);
 }
 
 /********** UnboundScript & ScriptCompilerCachedData **********/
@@ -1610,13 +1830,13 @@ RtnValue FunctionCall(ValuePtr ptr, ValuePtr recv, int argc, ValuePtr args[]) {
 
   RtnValue rtn = {};
   Local<Function> fn = Local<Function>::Cast(value);
-  Local<Value> argv[argc];
-  buildCallArguments(iso, argv, argc, args);
+  std::vector<Local<Value>> argv(argc);
+  buildCallArguments(iso, argv.data(), argc, args);
 
   Local<Value> local_recv = recv->ptr.Get(iso);
 
   Local<Value> result;
-  if (!fn->Call(local_ctx, local_recv, argc, argv).ToLocal(&result)) {
+  if (!fn->Call(local_ctx, local_recv, argc, argv.data()).ToLocal(&result)) {
     rtn.error = ExceptionError(try_catch, iso, local_ctx);
     return rtn;
   }
@@ -1633,10 +1853,10 @@ RtnValue FunctionNewInstance(ValuePtr ptr, int argc, ValuePtr args[]) {
   LOCAL_VALUE(ptr)
   RtnValue rtn = {};
   Local<Function> fn = Local<Function>::Cast(value);
-  Local<Value> argv[argc];
-  buildCallArguments(iso, argv, argc, args);
+  std::vector<Local<Value>> argv(argc);
+  buildCallArguments(iso, argv.data(), argc, args);
   Local<Object> result;
-  if (!fn->NewInstance(local_ctx, argc, argv).ToLocal(&result)) {
+  if (!fn->NewInstance(local_ctx, argc, argv.data()).ToLocal(&result)) {
     rtn.error = ExceptionError(try_catch, iso, local_ctx);
     return rtn;
   }

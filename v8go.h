@@ -51,6 +51,16 @@ typedef struct m_ctx m_ctx;
 typedef struct m_value m_value;
 typedef struct m_template m_template;
 typedef struct m_unboundScript m_unboundScript;
+typedef struct m_module m_module;
+typedef m_module* ModulePtr;
+
+#ifdef __cplusplus
+class v8goData;
+class v8goFixedArray;
+#else
+typedef struct v8goData v8goData;
+typedef struct v8goFixedArray v8goFixedArray;
+#endif
 
 typedef m_ctx* ContextPtr;
 typedef m_value* ValuePtr;
@@ -68,6 +78,11 @@ typedef struct {
   int cachedDataRejected;
   RtnError error;
 } RtnUnboundScript;
+
+typedef struct {
+  ModulePtr ptr;
+  RtnError error;
+} RtnModule;
 
 typedef struct {
   ScriptCompilerCachedDataPtr ptr;
@@ -153,6 +168,19 @@ extern RtnUnboundScript IsolateCompileUnboundScript(IsolatePtr iso_ptr,
                                                     const char* source,
                                                     const char* origin,
                                                     CompileOptions options);
+extern RtnModule CompileModule(IsolatePtr iso_ptr,
+                               const char* source,
+                               const char* origin);
+extern int ModuleGetStatus(ModulePtr module);
+extern int ModuleScriptId(ModulePtr module);
+extern int ModuleIsSourceTextModule(ModulePtr module);
+extern RtnValue ModuleEvaluate(ContextPtr ctx_ptr, ModulePtr module);
+extern RtnError ModuleInstantiateModule(ContextPtr ctx_ptr, ModulePtr module);
+extern ValuePtr ModuleGetModuleNamespace(IsolatePtr iso_ptr, ModulePtr module);
+int FixedArrayLength(v8goFixedArray* fixedArray, ContextPtr ctx);
+v8goData* FixedArrayGet(v8goFixedArray* fixedArray, ContextPtr ctx, int i);
+void DataRelease(v8goData* data);
+m_value* DataAsValue(v8goData* data, ContextPtr ctx);
 extern ScriptCompilerCachedData* UnboundScriptCreateCodeCache(
     IsolatePtr iso_ptr,
     UnboundScriptPtr us_ptr);
