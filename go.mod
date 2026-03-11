@@ -1,3 +1,3 @@
 module github.com/willyelm/v8go
 
-go 1.17
+go 1.26

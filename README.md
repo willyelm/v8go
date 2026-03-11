@@ -1,19 +1,15 @@
 # Execute JavaScript from Go
 
-<a href="https://github.com/rogchap/v8go/releases"><img src="https://img.shields.io/github/v/release/rogchap/v8go" alt="Github release"></a>
-[![Go Report Card](https://goreportcard.com/badge/rogchap.com/v8go)](https://goreportcard.com/report/rogchap.com/v8go)
-[![Go Reference](https://pkg.go.dev/badge/rogchap.com/v8go.svg)](https://pkg.go.dev/rogchap.com/v8go)
-[![CI](https://github.com/rogchap/v8go/workflows/CI/badge.svg)](https://github.com/rogchap/v8go/actions?query=workflow%3ACI)
-![V8 Build](https://github.com/rogchap/v8go/workflows/V8%20Build/badge.svg)
-[![codecov](https://codecov.io/gh/rogchap/v8go/branch/master/graph/badge.svg?token=VHZwzGm3dV)](https://codecov.io/gh/rogchap/v8go)
-[![FOSSA Status](https://app.fossa.com/api/projects/custom%2B22862%2Fgit%40github.com%3Arogchap%2Fv8go.git.svg?type=shield)](https://app.fossa.com/projects/custom%2B22862%2Fgit%40github.com%3Arogchap%2Fv8go.git?ref=badge_shield)
-[![#v8go Slack Channel](https://img.shields.io/badge/slack-%23v8go-4A154B?logo=slack)](https://gophers.slack.com/channels/v8go)
+<a href="https://github.com/willyelm/v8go/releases"><img src="https://img.shields.io/github/v/release/willyelm/v8go" alt="Github release"></a>
+[![Go Reference](https://pkg.go.dev/badge/github.com/willyelm/v8go.svg)](https://pkg.go.dev/github.com/willyelm/v8go)
+[![CI](https://github.com/willyelm/v8go/actions/workflows/test.yml/badge.svg)](https://github.com/willyelm/v8go/actions/workflows/test.yml)
+[![V8 Build](https://github.com/willyelm/v8go/actions/workflows/v8build.yml/badge.svg)](https://github.com/willyelm/v8go/actions/workflows/v8build.yml)
 
 <img src="gopher.jpg" width="200px" alt="V8 Gopher based on original artwork from the amazing Renee French" />
 
-This fork builds on `rogchap/v8go` with a stronger focus on embeddable runtime support. The main goal is to make module loading easier to integrate, easier to extend, and more efficient for custom isolate-based runtimes instead of keeping ESM support in application glue code.
+This project began from `rogchap/v8go`, which provided the original base for embedding V8 in Go. Development there has been largely inactive for the runtime and module features needed here, so this project now continues as an independent line focused on embeddable runtime support.
 
-Compared to `rogchap/v8go`, this fork adds and is evolving around:
+Compared to the original project, this codebase adds and is evolving around:
 
 - first-class ESM compilation and evaluation with `CompileModule`, `InstantiateModule`, and `Evaluate`
 - static import resolution through Go-managed module loader callbacks
@@ -21,7 +17,7 @@ Compared to `rogchap/v8go`, this fork adds and is evolving around:
 - module status and namespace access for runtime-controlled loading
 - a cleaner path for custom module origins, resolver policies, and runtime-specific caching
 
-The intent is to keep the API abstract enough to feel like V8, while providing the runtime hooks needed to build higher-level systems on top of it with less glue and less repeated loader code.
+The intent is to stay close to V8 terminology and lifecycle, while providing the runtime hooks needed to build higher-level systems on top of it with less glue, less repeated loader code, and better control of module loading behavior.
 
 ## Usage
 
@@ -195,7 +191,7 @@ func printTree(nest string, node *v8.CPUProfileNode) {
 
 ## Documentation
 
-Go Reference & more examples: https://pkg.go.dev/rogchap.com/v8go
+Go Reference & more examples: https://pkg.go.dev/github.com/willyelm/v8go
 
 ### Support
 
